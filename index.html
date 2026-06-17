@@ -161,8 +161,6 @@
   .ovcell .od.flat{color:var(--faint)}
   .ovcell .od .wins{color:#9a7400}
   .ovcell svg{width:100%;height:42px;display:block;margin-top:6px;overflow:visible}
-  .ovcell .addbtn{position:absolute;top:10px;right:12px;font-size:15px;line-height:1;color:var(--faint);opacity:0;transition:opacity .12s}
-  .ovcell:hover .addbtn{opacity:1}
 
   .credit{margin-top:24px;font-size:11.5px;color:var(--faint);text-align:center;line-height:1.7}
   .credit a{color:var(--muted)}
@@ -271,7 +269,7 @@
     <div class="panel">
       <div class="ph">
         <h3>All events at a glance</h3>
-        <p>Click to focus · hover &amp; press <b>+</b> to add to the comparison</p>
+        <p>Tap any event to see its full race history</p>
       </div>
       <div class="ovgrid" id="overview"></div>
     </div>
@@ -466,8 +464,7 @@ function placeBadge(p){
 }
 
 /* ===================== STATE ===================== */
-let selected=['mile'];
-let mode='absolute';
+let current='mile';
 
 /* ===================== CHART ===================== */
 const svg=document.getElementById('chart');
@@ -475,12 +472,9 @@ const tip=document.getElementById('tip');
 const host=svg.parentElement;
 const isTouch=window.matchMedia('(hover: none), (pointer: coarse)').matches;
 
-function valOf(ev,row){return mode==='normalized'?(row[2]/pbSec(ev)-1)*100:row[2];}
-function fmtVal(v){return mode==='normalized'?(v>=0?'+':'')+v.toFixed(1)+'%':fmt(v);}
-
 function drawChart(){
-  const evs=selected.map(k=>EVENTS.find(e=>e.key===k));
-  const multi=evs.length>1;
+  const ev=EVENTS.find(e=>e.key===current);
+  const rows=byDate(ev), pbi=pbIndex(ev);
 
   /* ---- responsive layout: draw ~1:1 with the container so text keeps its real px size ---- */
   const cw=Math.max(280,Math.round(host.clientWidth||1080));
@@ -488,32 +482,29 @@ function drawChart(){
   const W=cw, H=mobile?Math.round(cw*1.2):470;
   const M=mobile?{t:30,r:14,b:42,l:58}:{t:42,r:26,b:64,l:80};
   const PL=M.l,PR=W-M.r,PT=M.t,PB=H-M.b;
-  const FS=mobile?{ax:11.5,fast:11,year:11,val:11.5,zero:10}:{ax:12,fast:10.5,year:11,val:12.5,zero:10.5};
+  const FS=mobile?{ax:11.5,fast:11,year:11,val:11.5}:{ax:12,fast:10.5,year:11,val:12.5};
   const R=mobile?{pb:6,pt:4.4,halo:11}:{pb:6.5,pt:5,halo:12};
   const HIT=mobile?13:9, SW=mobile?2.4:2;
   svg.setAttribute('viewBox',`0 0 ${W} ${H}`);
 
-  let vals=[],dates=[];
-  evs.forEach(ev=>ev.data.forEach(r=>{vals.push(valOf(ev,r));dates.push(ms(r[0]));}));
-  let minV=Math.min(...vals),maxV=Math.max(...vals);
-  let range=maxV-minV;if(range===0)range=Math.max(Math.abs(maxV)*0.04,2);
-  let vpad=range*0.16, minP=minV-vpad, maxP=maxV+vpad;
-  if(mode==='normalized')minP=Math.min(minP,-range*0.05);
+  const secs=rows.map(r=>r[2]);
+  let minV=Math.min(...secs),maxV=Math.max(...secs);
+  let range=maxV-minV;if(range===0)range=Math.max(maxV*0.04,2);
+  const vpad=range*0.16,minP=minV-vpad,maxP=maxV+vpad;
 
-  let d0=Math.min(...dates),d1=Math.max(...dates);
+  let d0=ms(rows[0][0]),d1=ms(rows[rows.length-1][0]);
   if(d1===d0){d0-=15*864e5;d1+=15*864e5;}
   const dpad=(d1-d0)*0.05;d0-=dpad;d1+=dpad;
   const x=t=>PL+(t-d0)/(d1-d0)*(PR-PL);
-  const y=v=>PT+(v-minP)/(maxP-minP)*(PB-PT);
+  const y=s=>PT+(s-minP)/(maxP-minP)*(PB-PT);
 
   let g='';
   niceTicks(minP,maxP,4).forEach(t=>{
-    const yy=y(t),isZero=(mode==='normalized'&&Math.abs(t)<1e-6);
-    g+=`<line x1="${PL}" y1="${yy.toFixed(1)}" x2="${PR}" y2="${yy.toFixed(1)}" stroke="${isZero?'#f0dca0':'var(--line2)'}" stroke-width="${isZero?1.5:1}"/>`;
-    g+=`<text x="${PL-8}" y="${(yy+4).toFixed(1)}" text-anchor="end" font-size="${FS.ax}" fill="#9aa6b4" class="mono-num">${fmtVal(t)}</text>`;
+    const yy=y(t);
+    g+=`<line x1="${PL}" y1="${yy.toFixed(1)}" x2="${PR}" y2="${yy.toFixed(1)}" stroke="var(--line2)" stroke-width="1"/>`;
+    g+=`<text x="${PL-8}" y="${(yy+4).toFixed(1)}" text-anchor="end" font-size="${FS.ax}" fill="#9aa6b4" class="mono-num">${fmt(t)}</text>`;
   });
   g+=`<text x="${PL-8}" y="${(PT-14).toFixed(1)}" text-anchor="end" font-size="${FS.fast}" fill="#9aa6b4" font-weight="700" letter-spacing="0.05em">FASTER ↑</text>`;
-  if(mode==='normalized'){const yz=y(0);g+=`<text x="${PR}" y="${(yz-7).toFixed(1)}" text-anchor="end" font-size="${FS.zero}" fill="#c8a23a" font-weight="700">PB = 0%</text>`;}
 
   const yr0=new Date(d0).getUTCFullYear(),yr1=new Date(d1).getUTCFullYear();
   for(let yr=yr0;yr<=yr1+1;yr++){
@@ -522,63 +513,52 @@ function drawChart(){
     g+=`<text x="${xx.toFixed(1)}" y="${(PB+(mobile?17:34)).toFixed(1)}" text-anchor="middle" font-size="${FS.year}" fill="#b5bfca" font-weight="600">${yr}</text>`;
   }
 
-  evs.forEach(ev=>{
-    const rows=byDate(ev),ecol=colorOf(ev.key),pbi=pbIndex(ev),lineCol=multi?ecol:'#c3cee0';
-    if(rows.length>1){
-      const pts=rows.map(r=>`${x(ms(r[0])).toFixed(1)},${y(valOf(ev,r)).toFixed(1)}`).join(' ');
-      g+=`<polyline points="${pts}" fill="none" stroke="${lineCol}" stroke-width="${SW}" stroke-linejoin="round" stroke-linecap="round" opacity="${multi?0.9:1}"/>`;
+  if(rows.length>1){
+    const pts=rows.map(r=>`${x(ms(r[0])).toFixed(1)},${y(r[2]).toFixed(1)}`).join(' ');
+    g+=`<polyline points="${pts}" fill="none" stroke="#c3cee0" stroke-width="${SW}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    let run=Infinity,env=[];rows.forEach(r=>{if(r[2]<run){run=r[2];env.push(r);}});
+    if(env.length>1){
+      const epts=env.map(r=>`${x(ms(r[0])).toFixed(1)},${y(r[2]).toFixed(1)}`).join(' ');
+      g+=`<polyline points="${epts}" fill="none" stroke="var(--gold)" stroke-width="${SW}" stroke-dasharray="2 4" stroke-linecap="round" opacity="0.65"/>`;
     }
-    if(!multi&&rows.length>1){
-      let run=Infinity,env=[];rows.forEach(r=>{if(r[2]<run){run=r[2];env.push(r);}});
-      if(env.length>1){
-        const epts=env.map(r=>`${x(ms(r[0])).toFixed(1)},${y(valOf(ev,r)).toFixed(1)}`).join(' ');
-        g+=`<polyline points="${epts}" fill="none" stroke="var(--gold)" stroke-width="${SW}" stroke-dasharray="2 4" stroke-linecap="round" opacity="0.65"/>`;
-      }
+  }
+
+  rows.forEach(r=>{
+    const cx=x(ms(r[0])),cy=y(r[2]),isPB=(ev.data[pbi]===r);
+    if(isPB){
+      g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.halo}" fill="var(--gold)" opacity="0.16"/>`;
+      g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.pb}" fill="var(--gold)" stroke="#fff" stroke-width="2.5"/>`;
+      const lx=Math.max(PL+16,Math.min(PR-16,cx));
+      g+=`<text x="${lx.toFixed(1)}" y="${(cy-R.pb-7).toFixed(1)}" text-anchor="middle" font-size="${FS.val}" font-weight="700" fill="#9a7400" class="mono-num">${r[1]}</text>`;
+    }else{
+      g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.pt}" fill="${seasonColor(r[0])}" stroke="#fff" stroke-width="2" opacity="0.92"/>`;
     }
-    rows.forEach(r=>{
-      const cx=x(ms(r[0])),cy=y(valOf(ev,r)),isPB=(ev.data[pbi]===r);
-      if(!multi){
-        if(isPB){
-          g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.halo}" fill="var(--gold)" opacity="0.16"/>`;
-          g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.pb}" fill="var(--gold)" stroke="#fff" stroke-width="2.5"/>`;
-          const lx=Math.max(PL+16,Math.min(PR-16,cx));
-          g+=`<text x="${lx.toFixed(1)}" y="${(cy-R.pb-7).toFixed(1)}" text-anchor="middle" font-size="${FS.val}" font-weight="700" fill="#9a7400" class="mono-num">${r[1]}</text>`;
-        }else{
-          g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.pt}" fill="${seasonColor(r[0])}" stroke="#fff" stroke-width="2" opacity="0.92"/>`;
-        }
-      }else{
-        if(isPB) g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.pb-0.5}" fill="#fff" stroke="${ecol}" stroke-width="3"/>`;
-        else     g+=`<circle cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${R.pt}" fill="${ecol}" stroke="#fff" stroke-width="1.6" opacity="0.92"/>`;
-      }
-      // transparent oversized hit target (easier to tap/hover)
-      g+=`<circle class="pt" data-ev="${ev.key}" data-d="${r[0]}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${HIT}" fill="transparent" style="pointer-events:all"/>`;
-    });
+    // transparent oversized hit target (easier to tap/hover)
+    g+=`<circle class="pt" data-d="${r[0]}" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="${HIT}" fill="transparent" style="pointer-events:all"/>`;
   });
 
   svg.innerHTML=g;
-  const lookup={};evs.forEach(ev=>{ev.data.forEach(r=>{lookup[ev.key+'|'+r[0]]=[ev,r];});});
+  const lookup={};rows.forEach(r=>{lookup[r[0]]=r;});
   svg.querySelectorAll('.pt').forEach(c=>{
-    const pair=lookup[c.dataset.ev+'|'+c.dataset.d];
+    const r=lookup[c.dataset.d];
     if(isTouch){
-      c.addEventListener('click',e=>{e.stopPropagation();showTip(e,pair[0],pair[1]);});
+      c.addEventListener('click',e=>{e.stopPropagation();showTip(e,ev,r);});
     }else{
       c.style.cursor='pointer';
-      c.addEventListener('mouseenter',e=>showTip(e,pair[0],pair[1]));
+      c.addEventListener('mouseenter',e=>showTip(e,ev,r));
       c.addEventListener('mousemove',moveTip);
       c.addEventListener('mouseleave',()=>{tip.style.opacity=0;});
-      c.addEventListener('click',()=>window.open(linkFor(pair[0],pair[1]),'_blank'));
+      c.addEventListener('click',()=>window.open(linkFor(ev,r),'_blank'));
     }
   });
 }
 function showTip(e,ev,r){
-  const isPB=(ev.data[pbIndex(ev)]===r),gr=gradeOf(r[0]),multi=selected.length>1,p=r[5];
+  const isPB=(ev.data[pbIndex(ev)]===r),gr=gradeOf(r[0]),p=r[5];
   const placeLine=p!=null?`<div class="t-place" style="color:${p===1?'#ffd766':p<=3?'#dfe7f2':'#b9cae6'}">${p===1?'🥇 ':p===2?'🥈 ':p===3?'🥉 ':''}${ord(p)} place</div>`:'';
-  const normLine=mode==='normalized'?`<div class="t-meta">${fmtVal(valOf(ev,r))} off personal best</div>`:'';
-  tip.innerHTML=`${multi?`<div class="t-ev" style="color:${colorOf(ev.key)}">${ev.name}</div>`:''}
-    <div class="t-time mono-num">${r[1]}</div>${placeLine}
+  tip.innerHTML=`<div class="t-time mono-num">${r[1]}</div>${placeLine}
     <div class="t-meta">${fmtDate(r[0])} · ${termOf(r[0])}${gr?' · '+gr+'th grade':''}</div>
     <div class="t-meta">${r[4]}${r[3]?' · hand-timed':''}</div>
-    ${normLine}${isPB?'<div class="t-pb">★ Personal best</div>':''}`;
+    ${isPB?'<div class="t-pb">★ Personal best</div>':''}`;
   tip.style.opacity=1;moveTip(e);
 }
 function moveTip(e){
@@ -592,40 +572,22 @@ function moveTip(e){
 
 /* ===================== TABLE ===================== */
 function drawTable(){
-  const multi=selected.length>1,head=document.getElementById('tblHead');
-  let rowsAll=[];
-  selected.forEach(k=>{const ev=EVENTS.find(e=>e.key===k);ev.data.forEach(r=>rowsAll.push([ev,r]));});
-  rowsAll.sort((a,b)=>ms(b[1][0])-ms(a[1][0]));
+  const ev=EVENTS.find(e=>e.key===current);
+  const rows=[...ev.data].sort((a,b)=>ms(b[0])-ms(a[0]));
+  document.getElementById('tblHead').innerHTML='<th>Date</th><th>Time</th><th>Place</th><th>Meet</th>';
   let h='';
-  if(multi){
-    head.innerHTML='<th>Date</th><th>Event</th><th>Time</th><th>Place</th><th>Meet</th>';
-    rowsAll.forEach(([ev,r])=>{
-      const isPB=(ev.data[pbIndex(ev)]===r);
-      h+=`<tr class="${isPB?'pb':''}">
-        <td style="white-space:nowrap"><span class="seasondot" style="background:${seasonColor(r[0])}"></span>${fmtDate(r[0])}</td>
-        <td><span class="evtag"><span class="sw" style="background:${colorOf(ev.key)}"></span>${ev.name}</span></td>
-        <td class="time mono-num">${r[1]}${isPB?'<span class="tag pb">PB</span>':''}${r[3]?'<span class="tag h">h</span>':''}</td>
-        <td>${placeBadge(r[5])}</td>
-        <td class="meet"><a href="${linkFor(ev,r)}" target="_blank" rel="noopener">${r[4]}<span class="ext">↗</span></a></td></tr>`;
-    });
-    document.getElementById('tblTitle').textContent=`Races — ${selected.length} events`;
-    document.getElementById('tblSub').textContent=`${rowsAll.length} marks across selected events, most recent first`;
-  }else{
-    const ev=EVENTS.find(e=>e.key===selected[0]);
-    head.innerHTML='<th>Date</th><th>Time</th><th>Place</th><th>Meet</th>';
-    rowsAll.forEach(([ev,r])=>{
-      const isPB=(ev.data[pbIndex(ev)]===r),gr=gradeOf(r[0]);
-      h+=`<tr class="${isPB?'pb':''}">
-        <td style="white-space:nowrap"><span class="seasondot" style="background:${seasonColor(r[0])}"></span>${fmtDate(r[0])}</td>
-        <td class="time mono-num">${r[1]}${isPB?'<span class="tag pb">PB</span>':''}${r[3]?'<span class="tag h">h</span>':''}</td>
-        <td>${placeBadge(r[5])}</td>
-        <td class="meet"><a href="${linkFor(ev,r)}" target="_blank" rel="noopener">${r[4]}<span class="ext">↗</span></a>${gr?` · <span style="color:var(--faint)">${gr}th</span>`:''}</td></tr>`;
-    });
-    document.getElementById('tblTitle').textContent=`Every ${ev.name} race`;
-    const w=winCount(ev);
-    document.getElementById('tblSub').textContent=`${ev.data.length} recorded mark${ev.data.length>1?'s':''}${w?` · ${w} win${w>1?'s':''}`:''}, most recent first`;
-  }
+  rows.forEach(r=>{
+    const isPB=(ev.data[pbIndex(ev)]===r),gr=gradeOf(r[0]);
+    h+=`<tr class="${isPB?'pb':''}">
+      <td style="white-space:nowrap"><span class="seasondot" style="background:${seasonColor(r[0])}"></span>${fmtDate(r[0])}</td>
+      <td class="time mono-num">${r[1]}${isPB?'<span class="tag pb">PB</span>':''}${r[3]?'<span class="tag h">h</span>':''}</td>
+      <td>${placeBadge(r[5])}</td>
+      <td class="meet"><a href="${linkFor(ev,r)}" target="_blank" rel="noopener">${r[4]}<span class="ext">↗</span></a>${gr?` · <span style="color:var(--faint)">${gr}th</span>`:''}</td></tr>`;
+  });
   document.getElementById('tblBody').innerHTML=h;
+  document.getElementById('tblTitle').textContent=`Every ${ev.name} race`;
+  const w=winCount(ev);
+  document.getElementById('tblSub').textContent=`${ev.data.length} recorded mark${ev.data.length>1?'s':''}${w?` · ${w} win${w>1?'s':''}`:''}, most recent first`;
 }
 
 /* ===================== OVERVIEW SPARKS ===================== */
@@ -650,16 +612,10 @@ function drawOverview(){
     const winsTxt=w?` · <span class="wins">🥇${w}</span>`:'';
     const deltaTxt=flat?`${ev.data.length} race${winsTxt}`:`↓ ${fmtMag(imp.delta)} · ${ev.data.length} races${winsTxt}`;
     return `<div class="ovcell" data-key="${ev.key}">
-      <div class="addbtn" data-add="${ev.key}" title="Add to comparison">＋</div>
       <div class="oe"><span class="nm"><span class="sw" style="background:${colorOf(ev.key)}"></span>${ev.name}</span><span class="opb mono-num">${ev.data[pbIndex(ev)][1]}</span></div>
       <div class="od ${flat?'flat':''}">${deltaTxt}</div>${spark(ev)}</div>`;
   }).join('');
-  el.querySelectorAll('.ovcell').forEach(c=>{
-    c.addEventListener('click',e=>{
-      if(e.target.dataset.add){toggle(e.target.dataset.add);e.stopPropagation();}
-      else setSingle(c.dataset.key);
-    });
-  });
+  el.querySelectorAll('.ovcell').forEach(c=>c.addEventListener('click',()=>select(c.dataset.key)));
 }
 
 /* ===================== STAT STRIP ===================== */
@@ -691,83 +647,47 @@ function drawChips(){
       `<button class="chip" data-key="${e.key}"><span class="swatch" style="background:${colorOf(e.key)}"></span>${e.name}<span class="ct">${e.data.length}</span></button>`).join('');
     return `<div class="chip-group"><span class="glabel">${gr}</span>${items}</div>`;
   }).join('');
-  document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>toggle(b.dataset.key)));
+  document.querySelectorAll('.chip').forEach(b=>b.addEventListener('click',()=>select(b.dataset.key)));
 }
 
 /* ===================== CONTROLS / FOOT ===================== */
 function drawControls(){
-  const multi=selected.length>1,ctr=document.getElementById('chartCtrls');
-  if(multi){
-    ctr.innerHTML=`<div class="seg" id="modeSeg">
-      <button data-m="normalized" class="${mode==='normalized'?'on':''}">% off best</button>
-      <button data-m="absolute" class="${mode==='absolute'?'on':''}">Actual time</button></div>`;
-    ctr.querySelectorAll('#modeSeg button').forEach(b=>b.addEventListener('click',()=>{mode=b.dataset.m;render();}));
-  }else{
-    const ev=EVENTS.find(e=>e.key===selected[0]),pb=ev.data[pbIndex(ev)];
-    ctr.innerHTML=`<div class="pb-badge"><div><div class="k">Career best</div><div class="v mono-num">${pb[1]}</div></div>
-      <div class="s">${pb[5]!=null?ord(pb[5])+' · ':''}${fmtDate(pb[0])}<br/>${termOf(pb[0])}</div></div>`;
-  }
+  const ev=EVENTS.find(e=>e.key===current),pb=ev.data[pbIndex(ev)];
+  document.getElementById('chartCtrls').innerHTML=`<div class="pb-badge"><div><div class="k">Career best</div><div class="v mono-num">${pb[1]}</div></div>
+    <div class="s">${pb[5]!=null?ord(pb[5])+' · ':''}${fmtDate(pb[0])}<br/>${termOf(pb[0])}</div></div>`;
 }
 function drawFoot(){
-  const foot=document.getElementById('foot'),multi=selected.length>1;
-  if(multi){
-    const legend=selected.map(k=>{const ev=EVENTS.find(e=>e.key===k);
-      return `<span class="lg"><span class="sw" style="background:${colorOf(k)}"></span><b>${ev.name}</b> <span class="pbv mono-num">${ev.data[pbIndex(ev)][1]}</span></span>`;}).join('');
-    foot.innerHTML=legend+`<span style="color:var(--faint)">○ ring = each event's personal best · ${mode==='normalized'?'0% line = personal best':'shared time axis'}</span>`;
-  }else{
-    foot.innerHTML=`<span><span class="dot" style="background:var(--indoor)"></span>Indoor race</span>
-      <span><span class="dot" style="background:var(--outdoor)"></span>Outdoor race</span>
-      <span><span class="ring"></span>Career personal best</span>
-      <span><span class="swline"></span>Running best</span>
-      <span style="color:var(--faint)">Higher = faster · ${isTouch?'tap':'hover'} a point for place &amp; meet</span>`;
-  }
+  document.getElementById('foot').innerHTML=`<span><span class="dot" style="background:var(--indoor)"></span>Indoor race</span>
+    <span><span class="dot" style="background:var(--outdoor)"></span>Outdoor race</span>
+    <span><span class="ring"></span>Career personal best</span>
+    <span><span class="swline"></span>Running best</span>
+    <span style="color:var(--faint)">Higher = faster · ${isTouch?'tap':'hover'} a point for place &amp; meet</span>`;
 }
 
 /* ===================== TITLE ===================== */
 function drawHeader(){
-  const multi=selected.length>1;
-  if(multi){
-    document.getElementById('chartTitle').textContent=`Comparing ${selected.length} events`;
-    const totalRaces=selected.reduce((a,k)=>a+EVENTS.find(e=>e.key===k).data.length,0);
-    document.getElementById('chartSub').innerHTML=mode==='normalized'
-      ? `Each line shows how close every race was to that event's <b>personal best</b> (0% = PB). Normalizing lets events of very different distances share one axis · <b>${totalRaces} races</b>.`
-      : `All selected events on one absolute time axis · <b>${totalRaces} races</b>. Switch to "% off best" to compare events with different time scales.`;
-  }else{
-    const ev=EVENTS.find(e=>e.key===selected[0]),imp=improvement(ev),w=winCount(ev);
-    document.getElementById('chartTitle').textContent=ev.name;
-    document.getElementById('chartSub').innerHTML=ev.data.length<2
-      ? `Single recorded mark${ev.data[0][5]!=null?` · ${ord(ev.data[0][5])} place`:''} · ${ev.group}`
-      : `<b>${ev.data.length} races</b> · improved <b>${fmtMag(imp.delta)}</b> (${imp.pct.toFixed(1)}%) to personal best${w?` · <b>${w}</b> win${w>1?'s':''}`:''} · ${ev.group}`;
-  }
+  const ev=EVENTS.find(e=>e.key===current),imp=improvement(ev),w=winCount(ev);
+  document.getElementById('chartTitle').textContent=ev.name;
+  document.getElementById('chartSub').innerHTML=ev.data.length<2
+    ? `Single recorded mark${ev.data[0][5]!=null?` · ${ord(ev.data[0][5])} place`:''} · ${ev.group}`
+    : `<b>${ev.data.length} races</b> · improved <b>${fmtMag(imp.delta)}</b> (${imp.pct.toFixed(1)}%) to personal best${w?` · <b>${w}</b> win${w>1?'s':''}`:''} · ${ev.group}`;
 }
 
 /* ===================== FILTER HINT ===================== */
 function drawHint(){
-  const h=document.getElementById('filterHint');
-  if(selected.length>1){
-    h.innerHTML=`Comparing <b>${selected.length}</b> events · click chips to add/remove · <button class="reset" id="resetBtn">reset to one</button>`;
-    document.getElementById('resetBtn').addEventListener('click',()=>setSingle(selected[0]));
-  }else{
-    h.innerHTML=`Showing one event · <b>click more chips to compare</b> several at once`;
-  }
+  const ev=EVENTS.find(e=>e.key===current);
+  document.getElementById('filterHint').innerHTML=`Showing <b>${ev.name}</b> · pick any event to switch`;
 }
 
 /* ===================== SELECTION ===================== */
 function syncActive(){
   document.querySelectorAll('.chip').forEach(c=>{
-    const on=selected.includes(c.dataset.key);
+    const on=c.dataset.key===current;
     c.classList.toggle('active',on);c.style.background=on?colorOf(c.dataset.key):'';
   });
-  document.querySelectorAll('.ovcell').forEach(c=>c.classList.toggle('active',selected.includes(c.dataset.key)));
+  document.querySelectorAll('.ovcell').forEach(c=>c.classList.toggle('active',c.dataset.key===current));
 }
-function toggle(key){
-  if(selected.includes(key)){if(selected.length===1)return;selected=selected.filter(k=>k!==key);}
-  else selected=[...selected,key];
-  if(selected.length>1&&mode==='absolute')mode='normalized';
-  if(selected.length===1)mode='absolute';
-  render();
-}
-function setSingle(key){selected=[key];mode='absolute';render();}
+function select(key){if(!EVENTS.find(e=>e.key===key))return;current=key;render();}
 function render(){syncActive();drawControls();drawHeader();drawHint();drawChart();drawTable();drawFoot();}
 
 /* ===================== INIT ===================== */
